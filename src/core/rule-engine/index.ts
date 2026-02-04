@@ -81,23 +81,41 @@ class RuleEngine {
       return { triggered: false, message: '' };
     }
 
-    const history = priceMonitor.getPriceHistory(rule.symbol, rule.volatility_window);
-    if (history.length < 2) {
+    const analysis = priceMonitor.getVolatilityAnalysis(rule.symbol, rule.volatility_window);
+    if (!analysis || analysis.klineCount < 2) {
       return { triggered: false, message: '' };
     }
 
-    const oldestPrice = history[0].price;
-    const currentPrice = priceData.price;
-    const changePercent = ((currentPrice - oldestPrice) / oldestPrice) * 100;
+    if (Math.abs(analysis.changePercent) >= rule.volatility_percent) {
+      const direction = analysis.direction === 'up' ? '上涨' : '下跌';
+      const emoji = analysis.direction === 'up' ? '🚀' : '💥';
 
-    if (Math.abs(changePercent) >= rule.volatility_percent) {
-      const direction = changePercent > 0 ? '上涨' : '下跌';
-      const emoji = changePercent > 0 ? '🚀' : '💥';
-      return {
-        triggered: true,
-        message: `${emoji} ${rule.symbol} ${rule.volatility_window}分钟内${direction} ${Math.abs(changePercent).toFixed(2)}%\n` +
-                 `起始价格: ${oldestPrice.toFixed(2)}\n当前价格: ${currentPrice.toFixed(2)}`,
-      };
+      // Volume analysis
+      let volumeText = '';
+      let volumeEmoji = '';
+      if (rule.with_volume && analysis.volumeInfo) {
+        const vol = analysis.volumeInfo;
+        volumeText = `\n成交量: ${vol.label} (${vol.ratio.toFixed(1)}倍均量)`;
+        volumeText += `\n参考K线: ${vol.klineCount}根`;
+        if (vol.label === '放量') {
+          volumeEmoji = '🔥 ';
+        }
+      }
+
+      // Calculate amplitude
+      const amplitude = ((analysis.highPrice - analysis.lowPrice) / analysis.lowPrice * 100).toFixed(2);
+
+      const message = `${volumeEmoji}${emoji} BTC ${rule.volatility_window}分钟内${direction} ${Math.abs(analysis.changePercent).toFixed(2)}%
+━━━━━━━━━━━━━━━━
+起始价格: ${analysis.startPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+当前价格: ${analysis.endPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+最高价格: ${analysis.highPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+最低价格: ${analysis.lowPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+振幅: ${amplitude}%
+速度: ${analysis.speed.toFixed(2)}%/分钟
+K线数量: ${analysis.klineCount}根${volumeText}`;
+
+      return { triggered: true, message };
     }
 
     return { triggered: false, message: '' };

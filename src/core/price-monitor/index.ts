@@ -13,6 +13,15 @@ interface VolumePoint {
   timestamp: number;
 }
 
+interface Kline {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  timestamp: number;  // minute timestamp
+}
+
 export interface PriceData {
   symbol: string;
   price: number;
@@ -25,12 +34,27 @@ export interface VolumeInfo {
   average: number;
   ratio: number;
   label: '放量' | '正常' | '缩量';
+  klineCount: number;
+}
+
+export interface VolatilityAnalysis {
+  changePercent: number;
+  direction: 'up' | 'down';
+  klineCount: number;
+  highPrice: number;
+  lowPrice: number;
+  startPrice: number;
+  endPrice: number;
+  volumeInfo: VolumeInfo | null;
+  speed: number;  // percent per minute
 }
 
 class PriceMonitor extends EventEmitter {
   private ws: WebSocket | null = null;
   private priceCache: Map<string, PricePoint[]> = new Map();
   private volumeCache: Map<string, VolumePoint[]> = new Map();
+  private klineCache: Map<string, Kline[]> = new Map();
+  private currentKline: Map<string, Kline> = new Map();
   private minuteVolume: Map<string, number> = new Map();
   private lastMinute: number = 0;
   private reconnectAttempts = 0;
@@ -100,28 +124,68 @@ class PriceMonitor extends EventEmitter {
 
     if (isNaN(price)) return;
 
-    // Track volume per minute
     const currentMinute = Math.floor(timestamp / 60000);
-    if (currentMinute !== this.lastMinute) {
+
+    // Initialize current K-line if not exists
+    if (!this.currentKline.has(symbol)) {
+      this.currentKline.set(symbol, {
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume: 0,
+        timestamp: currentMinute * 60000,
+      });
+    }
+
+    const kline = this.currentKline.get(symbol)!;
+    const klineMinute = Math.floor(kline.timestamp / 60000);
+
+    if (currentMinute !== klineMinute) {
+      // Save completed K-line
+      if (!this.klineCache.has(symbol)) {
+        this.klineCache.set(symbol, []);
+      }
+      const klines = this.klineCache.get(symbol)!;
+      klines.push({ ...kline });
+
+      // Keep last 60 K-lines (1 hour)
+      while (klines.length > 60) {
+        klines.shift();
+      }
+
       // Save previous minute's volume
-      if (this.lastMinute > 0) {
-        const prevVolume = this.minuteVolume.get(symbol) || 0;
-        if (prevVolume > 0) {
-          if (!this.volumeCache.has(symbol)) {
-            this.volumeCache.set(symbol, []);
-          }
-          const volCache = this.volumeCache.get(symbol)!;
-          volCache.push({ volume: prevVolume, timestamp: this.lastMinute * 60000 });
-          // Keep last 30 minutes
-          while (volCache.length > 30) {
-            volCache.shift();
-          }
+      const prevVolume = this.minuteVolume.get(symbol) || 0;
+      if (prevVolume > 0) {
+        if (!this.volumeCache.has(symbol)) {
+          this.volumeCache.set(symbol, []);
+        }
+        const volCache = this.volumeCache.get(symbol)!;
+        volCache.push({ volume: prevVolume, timestamp: klineMinute * 60000 });
+        while (volCache.length > 30) {
+          volCache.shift();
         }
       }
+
+      // Start new K-line
+      this.currentKline.set(symbol, {
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume: quantity * price,
+        timestamp: currentMinute * 60000,
+      });
+      this.minuteVolume.set(symbol, quantity * price);
       this.lastMinute = currentMinute;
-      this.minuteVolume.set(symbol, 0);
+    } else {
+      // Update current K-line
+      kline.high = Math.max(kline.high, price);
+      kline.low = Math.min(kline.low, price);
+      kline.close = price;
+      kline.volume += quantity * price;
+      this.minuteVolume.set(symbol, (this.minuteVolume.get(symbol) || 0) + quantity * price);
     }
-    this.minuteVolume.set(symbol, (this.minuteVolume.get(symbol) || 0) + quantity * price);
 
     this.updatePrice(symbol, price, timestamp, quantity);
   }
@@ -230,6 +294,58 @@ class PriceMonitor extends EventEmitter {
       average: avgVolume,
       ratio,
       label,
+      klineCount: recentVolumes.length,
+    };
+  }
+
+  getKlines(symbol: string, count: number): Kline[] {
+    const klines = this.klineCache.get(symbol.toLowerCase()) || [];
+    const result = klines.slice(-count);
+
+    // Add current incomplete K-line
+    const current = this.currentKline.get(symbol.toLowerCase());
+    if (current) {
+      result.push(current);
+    }
+
+    return result;
+  }
+
+  getVolatilityAnalysis(symbol: string, windowMinutes: number): VolatilityAnalysis | null {
+    const klines = this.getKlines(symbol, windowMinutes);
+    if (klines.length < 2) return null;
+
+    const startKline = klines[0];
+    const endKline = klines[klines.length - 1];
+
+    const startPrice = startKline.open;
+    const endPrice = endKline.close;
+    const changePercent = ((endPrice - startPrice) / startPrice) * 100;
+
+    // Find high and low across all K-lines
+    let highPrice = klines[0].high;
+    let lowPrice = klines[0].low;
+    for (const k of klines) {
+      highPrice = Math.max(highPrice, k.high);
+      lowPrice = Math.min(lowPrice, k.low);
+    }
+
+    // Calculate speed (percent per minute)
+    const speed = Math.abs(changePercent) / klines.length;
+
+    // Get volume info
+    const volumeInfo = this.getVolumeInfo(symbol, windowMinutes);
+
+    return {
+      changePercent,
+      direction: changePercent >= 0 ? 'up' : 'down',
+      klineCount: klines.length,
+      highPrice,
+      lowPrice,
+      startPrice,
+      endPrice,
+      volumeInfo,
+      speed,
     };
   }
 
