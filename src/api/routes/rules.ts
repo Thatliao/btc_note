@@ -29,7 +29,14 @@ router.get('/:id', (req: Request, res: Response) => {
 // Create rule
 router.post('/', (req: Request, res: Response) => {
   try {
-    const { name, symbol, type, threshold, volatility_window, volatility_percent, cooldown_minutes, is_one_time } = req.body;
+    const {
+      name, symbol, type, threshold,
+      volatility_window, volatility_percent,
+      cooldown_minutes, is_one_time,
+      start_price, end_price,
+      upper_price, lower_price, range_mode, confirm_percent,
+      with_volume
+    } = req.body;
 
     if (!name || !type) {
       return res.status(400).json({ error: 'name and type are required' });
@@ -43,6 +50,14 @@ router.post('/', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'volatility_window and volatility_percent are required for volatility rules' });
     }
 
+    if (type === 'fibonacci' && (!start_price || !end_price)) {
+      return res.status(400).json({ error: 'start_price and end_price are required for fibonacci rules' });
+    }
+
+    if (type === 'range' && (!upper_price || !lower_price)) {
+      return res.status(400).json({ error: 'upper_price and lower_price are required for range rules' });
+    }
+
     const rule = ruleRepository.create({
       name,
       symbol: symbol || 'BTCUSDT',
@@ -53,6 +68,13 @@ router.post('/', (req: Request, res: Response) => {
       volatility_percent: volatility_percent || null,
       cooldown_minutes: cooldown_minutes || 5,
       is_one_time: is_one_time ? 1 : 0,
+      start_price: start_price || null,
+      end_price: end_price || null,
+      upper_price: upper_price || null,
+      lower_price: lower_price || null,
+      range_mode: range_mode || null,
+      confirm_percent: confirm_percent || null,
+      with_volume: with_volume ? 1 : 0,
     });
 
     res.status(201).json(rule);

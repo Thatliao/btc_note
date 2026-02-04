@@ -41,9 +41,9 @@ export const ruleRepository = {
     const db = getDb();
     const id = uuidv4();
     db.run(`
-      INSERT INTO alert_rules (id, name, symbol, type, status, threshold, volatility_window, volatility_percent, cooldown_minutes, is_one_time)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [id, rule.name, rule.symbol, rule.type, rule.status, rule.threshold, rule.volatility_window, rule.volatility_percent, rule.cooldown_minutes, rule.is_one_time]);
+      INSERT INTO alert_rules (id, name, symbol, type, status, threshold, volatility_window, volatility_percent, cooldown_minutes, is_one_time, start_price, end_price, upper_price, lower_price, range_mode, confirm_percent, with_volume)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [id, rule.name, rule.symbol, rule.type, rule.status, rule.threshold, rule.volatility_window, rule.volatility_percent, rule.cooldown_minutes, rule.is_one_time, rule.start_price || null, rule.end_price || null, rule.upper_price || null, rule.lower_price || null, rule.range_mode || null, rule.confirm_percent || null, rule.with_volume || null]);
     saveDatabase();
     return this.findById(id)!;
   },

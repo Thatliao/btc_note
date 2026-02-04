@@ -56,6 +56,8 @@
             <option value="threshold_above">价格突破 (高于)</option>
             <option value="threshold_below">价格跌破 (低于)</option>
             <option value="volatility">波动异常</option>
+            <option value="fibonacci">斐波那契回撤</option>
+            <option value="range">震荡区间</option>
           </select>
         </div>
         <div id="threshold-fields" class="form-group">
@@ -71,6 +73,45 @@
             <label for="rule-percent">波动幅度 (%)</label>
             <input type="number" id="rule-percent" step="0.1" value="1" placeholder="例如: 1.5">
           </div>
+        </div>
+        <div id="fibonacci-fields" style="display:none;">
+          <div class="form-group">
+            <label for="rule-start-price">波段起点价格 (USDT)</label>
+            <input type="number" id="rule-start-price" step="0.01" placeholder="例如: 90000">
+          </div>
+          <div class="form-group">
+            <label for="rule-end-price">波段终点价格 (USDT)</label>
+            <input type="number" id="rule-end-price" step="0.01" placeholder="例如: 100000">
+          </div>
+          <div class="form-group">
+            <label>自动生成位置</label>
+            <div class="fib-levels">23.6%, 38.2%, 50%, 61.8%, 78.6%</div>
+          </div>
+        </div>
+        <div id="range-fields" style="display:none;">
+          <div class="form-group">
+            <label for="rule-upper-price">上轨价格 (USDT)</label>
+            <input type="number" id="rule-upper-price" step="0.01" placeholder="例如: 100000">
+          </div>
+          <div class="form-group">
+            <label for="rule-lower-price">下轨价格 (USDT)</label>
+            <input type="number" id="rule-lower-price" step="0.01" placeholder="例如: 95000">
+          </div>
+          <div class="form-group">
+            <label for="rule-range-mode">触发模式</label>
+            <select id="rule-range-mode">
+              <option value="touch">触碰提醒</option>
+              <option value="breakout">突破提醒</option>
+            </select>
+          </div>
+          <div class="form-group" id="confirm-percent-group" style="display:none;">
+            <label for="rule-confirm-percent">突破确认幅度 (%)</label>
+            <input type="number" id="rule-confirm-percent" step="0.1" value="0.3" placeholder="默认 0.3%">
+          </div>
+        </div>
+        <div class="form-group checkbox">
+          <input type="checkbox" id="rule-with-volume">
+          <label for="rule-with-volume">启用成交量辅助判断</label>
         </div>
         <div class="form-group">
           <label for="rule-cooldown">冷却时间 (分钟)</label>

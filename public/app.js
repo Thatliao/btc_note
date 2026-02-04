@@ -44,10 +44,25 @@ function setupModal() {
   });
 
   document.getElementById('rule-type').addEventListener('change', (e) => {
-    const isVolatility = e.target.value === 'volatility';
-    document.getElementById('threshold-fields').style.display = isVolatility ? 'none' : 'block';
-    document.getElementById('volatility-fields').style.display = isVolatility ? 'block' : 'none';
+    updateFormFields(e.target.value);
   });
+
+  document.getElementById('rule-range-mode').addEventListener('change', (e) => {
+    document.getElementById('confirm-percent-group').style.display =
+      e.target.value === 'breakout' ? 'block' : 'none';
+  });
+}
+
+function updateFormFields(type) {
+  const isVolatility = type === 'volatility';
+  const isFibonacci = type === 'fibonacci';
+  const isRange = type === 'range';
+  const isThreshold = type === 'threshold_above' || type === 'threshold_below';
+
+  document.getElementById('threshold-fields').style.display = isThreshold ? 'block' : 'none';
+  document.getElementById('volatility-fields').style.display = isVolatility ? 'block' : 'none';
+  document.getElementById('fibonacci-fields').style.display = isFibonacci ? 'block' : 'none';
+  document.getElementById('range-fields').style.display = isRange ? 'block' : 'none';
 }
 
 function openModal(rule = null) {
@@ -63,16 +78,27 @@ function openModal(rule = null) {
     document.getElementById('rule-percent').value = rule.volatility_percent || 1;
     document.getElementById('rule-cooldown').value = rule.cooldown_minutes;
     document.getElementById('rule-onetime').checked = rule.is_one_time === 1;
+    // Fibonacci fields
+    document.getElementById('rule-start-price').value = rule.start_price || '';
+    document.getElementById('rule-end-price').value = rule.end_price || '';
+    // Range fields
+    document.getElementById('rule-upper-price').value = rule.upper_price || '';
+    document.getElementById('rule-lower-price').value = rule.lower_price || '';
+    document.getElementById('rule-range-mode').value = rule.range_mode || 'touch';
+    document.getElementById('rule-confirm-percent').value = rule.confirm_percent || 0.3;
+    // Volume
+    document.getElementById('rule-with-volume').checked = rule.with_volume === 1;
   } else {
     ruleForm.reset();
     document.getElementById('rule-cooldown').value = 5;
     document.getElementById('rule-window').value = 5;
     document.getElementById('rule-percent').value = 1;
+    document.getElementById('rule-confirm-percent').value = 0.3;
   }
 
-  const isVolatility = document.getElementById('rule-type').value === 'volatility';
-  document.getElementById('threshold-fields').style.display = isVolatility ? 'none' : 'block';
-  document.getElementById('volatility-fields').style.display = isVolatility ? 'block' : 'none';
+  updateFormFields(document.getElementById('rule-type').value);
+  document.getElementById('confirm-percent-group').style.display =
+    document.getElementById('rule-range-mode').value === 'breakout' ? 'block' : 'none';
 
   ruleModal.classList.add('show');
 }
@@ -93,11 +119,20 @@ function setupForm() {
       type,
       cooldown_minutes: parseInt(document.getElementById('rule-cooldown').value),
       is_one_time: document.getElementById('rule-onetime').checked,
+      with_volume: document.getElementById('rule-with-volume').checked,
     };
 
     if (type === 'volatility') {
       data.volatility_window = parseInt(document.getElementById('rule-window').value);
       data.volatility_percent = parseFloat(document.getElementById('rule-percent').value);
+    } else if (type === 'fibonacci') {
+      data.start_price = parseFloat(document.getElementById('rule-start-price').value);
+      data.end_price = parseFloat(document.getElementById('rule-end-price').value);
+    } else if (type === 'range') {
+      data.upper_price = parseFloat(document.getElementById('rule-upper-price').value);
+      data.lower_price = parseFloat(document.getElementById('rule-lower-price').value);
+      data.range_mode = document.getElementById('rule-range-mode').value;
+      data.confirm_percent = parseFloat(document.getElementById('rule-confirm-percent').value);
     } else {
       data.threshold = parseFloat(document.getElementById('rule-threshold').value);
     }
@@ -146,14 +181,23 @@ function renderRules() {
       threshold_above: '价格突破',
       threshold_below: '价格跌破',
       volatility: '波动异常',
+      fibonacci: '斐波那契',
+      range: '震荡区间',
     };
 
     let conditionText = '';
     if (rule.type === 'volatility') {
       conditionText = `${rule.volatility_window}分钟内波动 ${rule.volatility_percent}%`;
+    } else if (rule.type === 'fibonacci') {
+      conditionText = `${rule.start_price} → ${rule.end_price}`;
+    } else if (rule.type === 'range') {
+      const modeText = rule.range_mode === 'breakout' ? '突破' : '触碰';
+      conditionText = `${rule.lower_price} - ${rule.upper_price} (${modeText})`;
     } else {
       conditionText = `${rule.threshold} USDT`;
     }
+
+    const volumeTag = rule.with_volume ? '<span class="tag volume-tag">带量</span>' : '';
 
     return `
       <div class="rule-card">
@@ -162,7 +206,7 @@ function renderRules() {
           <span class="rule-status ${rule.status}">${rule.status === 'active' ? '运行中' : '已暂停'}</span>
         </div>
         <div class="rule-details">
-          <div class="rule-detail"><strong>类型:</strong> ${typeLabels[rule.type]}</div>
+          <div class="rule-detail"><strong>类型:</strong> ${typeLabels[rule.type]} ${volumeTag}</div>
           <div class="rule-detail"><strong>条件:</strong> ${conditionText}</div>
           <div class="rule-detail"><strong>冷却:</strong> ${rule.cooldown_minutes}分钟</div>
           ${rule.is_one_time ? '<div class="rule-detail"><strong>一次性</strong></div>' : ''}

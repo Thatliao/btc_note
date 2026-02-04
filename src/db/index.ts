@@ -36,9 +36,26 @@ export async function initDatabase(): Promise<Database> {
       is_one_time INTEGER NOT NULL DEFAULT 0,
       last_triggered_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      start_price REAL,
+      end_price REAL,
+      upper_price REAL,
+      lower_price REAL,
+      range_mode TEXT,
+      confirm_percent REAL,
+      with_volume INTEGER
     )
   `);
+
+  // Add new columns for existing databases (migrations)
+  const columns = ['start_price', 'end_price', 'upper_price', 'lower_price', 'range_mode', 'confirm_percent', 'with_volume'];
+  for (const col of columns) {
+    try {
+      db.run(`ALTER TABLE alert_rules ADD COLUMN ${col} ${col === 'range_mode' ? 'TEXT' : col === 'with_volume' ? 'INTEGER' : 'REAL'}`);
+    } catch (e) {
+      // Column already exists
+    }
+  }
 
   db.run(`
     CREATE TABLE IF NOT EXISTS alert_history (
@@ -83,7 +100,7 @@ export interface AlertRule {
   id: string;
   name: string;
   symbol: string;
-  type: 'threshold_above' | 'threshold_below' | 'volatility';
+  type: 'threshold_above' | 'threshold_below' | 'volatility' | 'fibonacci' | 'range';
   status: 'active' | 'paused';
   threshold: number | null;
   volatility_window: number | null;
@@ -93,6 +110,16 @@ export interface AlertRule {
   last_triggered_at: string | null;
   created_at: string;
   updated_at: string;
+  // Fibonacci fields
+  start_price: number | null;
+  end_price: number | null;
+  // Range fields
+  upper_price: number | null;
+  lower_price: number | null;
+  range_mode: 'touch' | 'breakout' | null;
+  confirm_percent: number | null;
+  // Volume option
+  with_volume: number | null;
 }
 
 export interface AlertHistory {

@@ -8,15 +8,31 @@ interface PricePoint {
   timestamp: number;
 }
 
+interface VolumePoint {
+  volume: number;
+  timestamp: number;
+}
+
 export interface PriceData {
   symbol: string;
   price: number;
   timestamp: number;
+  volume?: number;
+}
+
+export interface VolumeInfo {
+  current: number;
+  average: number;
+  ratio: number;
+  label: '放量' | '正常' | '缩量';
 }
 
 class PriceMonitor extends EventEmitter {
   private ws: WebSocket | null = null;
   private priceCache: Map<string, PricePoint[]> = new Map();
+  private volumeCache: Map<string, VolumePoint[]> = new Map();
+  private minuteVolume: Map<string, number> = new Map();
+  private lastMinute: number = 0;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
@@ -80,13 +96,37 @@ class PriceMonitor extends EventEmitter {
     const symbol = msg.s?.toLowerCase() || 'btcusdt';
     const price = parseFloat(msg.p);
     const timestamp = msg.T || Date.now();
+    const quantity = parseFloat(msg.q) || 0;
 
     if (isNaN(price)) return;
 
-    this.updatePrice(symbol, price, timestamp);
+    // Track volume per minute
+    const currentMinute = Math.floor(timestamp / 60000);
+    if (currentMinute !== this.lastMinute) {
+      // Save previous minute's volume
+      if (this.lastMinute > 0) {
+        const prevVolume = this.minuteVolume.get(symbol) || 0;
+        if (prevVolume > 0) {
+          if (!this.volumeCache.has(symbol)) {
+            this.volumeCache.set(symbol, []);
+          }
+          const volCache = this.volumeCache.get(symbol)!;
+          volCache.push({ volume: prevVolume, timestamp: this.lastMinute * 60000 });
+          // Keep last 30 minutes
+          while (volCache.length > 30) {
+            volCache.shift();
+          }
+        }
+      }
+      this.lastMinute = currentMinute;
+      this.minuteVolume.set(symbol, 0);
+    }
+    this.minuteVolume.set(symbol, (this.minuteVolume.get(symbol) || 0) + quantity * price);
+
+    this.updatePrice(symbol, price, timestamp, quantity);
   }
 
-  private updatePrice(symbol: string, price: number, timestamp: number) {
+  private updatePrice(symbol: string, price: number, timestamp: number, volume?: number) {
     this.currentPrices.set(symbol, price);
 
     // Update price cache
@@ -102,7 +142,7 @@ class PriceMonitor extends EventEmitter {
       cache.shift();
     }
 
-    const priceData: PriceData = { symbol: symbol.toUpperCase(), price, timestamp };
+    const priceData: PriceData = { symbol: symbol.toUpperCase(), price, timestamp, volume };
     this.emit('price', priceData);
   }
 
@@ -160,6 +200,37 @@ class PriceMonitor extends EventEmitter {
     const cache = this.priceCache.get(symbol.toLowerCase()) || [];
     const cutoff = Date.now() - windowMinutes * 60 * 1000;
     return cache.filter(p => p.timestamp >= cutoff);
+  }
+
+  getVolumeInfo(symbol: string, windowMinutes: number = 10): VolumeInfo | null {
+    const volCache = this.volumeCache.get(symbol.toLowerCase()) || [];
+    if (volCache.length < 2) return null;
+
+    const cutoff = Date.now() - windowMinutes * 60 * 1000;
+    const recentVolumes = volCache.filter(v => v.timestamp >= cutoff);
+    if (recentVolumes.length < 2) return null;
+
+    const currentVolume = this.minuteVolume.get(symbol.toLowerCase()) || 0;
+    const avgVolume = recentVolumes.reduce((sum, v) => sum + v.volume, 0) / recentVolumes.length;
+
+    if (avgVolume === 0) return null;
+
+    const ratio = currentVolume / avgVolume;
+    let label: '放量' | '正常' | '缩量';
+    if (ratio > 2) {
+      label = '放量';
+    } else if (ratio < 0.5) {
+      label = '缩量';
+    } else {
+      label = '正常';
+    }
+
+    return {
+      current: currentVolume,
+      average: avgVolume,
+      ratio,
+      label,
+    };
   }
 
   addSymbol(symbol: string) {
