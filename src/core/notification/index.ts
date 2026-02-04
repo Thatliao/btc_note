@@ -18,10 +18,13 @@ class NotificationService {
 
     try {
       const url = `${config.serverChan.apiUrl}/${config.serverChan.sendKey}.send`;
-      const response = await axios.post(url, null, {
-        params: {
-          title: title.slice(0, 32),
-          desp: content,
+      const params = new URLSearchParams();
+      params.append('title', title.slice(0, 32));
+      params.append('desp', content);
+
+      const response = await axios.post(url, params, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
       });
 
