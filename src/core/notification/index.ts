@@ -1,0 +1,57 @@
+import axios from 'axios';
+import { config } from '../../config';
+
+class NotificationService {
+  private sendTimes: number[] = [];
+  private maxPerMinute = config.notification.maxPerMinute;
+
+  async send(title: string, content: string): Promise<boolean> {
+    if (!this.canSend()) {
+      console.log('[Notification] Rate limited, skipping');
+      return false;
+    }
+
+    if (!config.serverChan.sendKey) {
+      console.log('[Notification] No SendKey configured, skipping');
+      return false;
+    }
+
+    try {
+      const url = `${config.serverChan.apiUrl}/${config.serverChan.sendKey}.send`;
+      const response = await axios.post(url, null, {
+        params: {
+          title: title.slice(0, 32),
+          desp: content,
+        },
+      });
+
+      if (response.data.code === 0) {
+        console.log('[Notification] Sent successfully');
+        this.recordSend();
+        return true;
+      } else {
+        console.error('[Notification] Failed:', response.data.message);
+        return false;
+      }
+    } catch (error: any) {
+      console.error('[Notification] Error:', error.message);
+      return false;
+    }
+  }
+
+  private canSend(): boolean {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60 * 1000;
+
+    // Clean old records
+    this.sendTimes = this.sendTimes.filter(t => t > oneMinuteAgo);
+
+    return this.sendTimes.length < this.maxPerMinute;
+  }
+
+  private recordSend() {
+    this.sendTimes.push(Date.now());
+  }
+}
+
+export const notificationService = new NotificationService();
