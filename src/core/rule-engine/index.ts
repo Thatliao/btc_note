@@ -2,6 +2,7 @@ import { AlertRule } from '../../db';
 import { ruleRepository, historyRepository } from '../../db/repository';
 import { priceMonitor, PriceData, VolumeInfo } from '../price-monitor';
 import { notificationService } from '../notification';
+import { broadcast } from '../websocket';
 
 // Track last triggered fibonacci levels and range states per rule
 const fibTriggeredLevels: Map<string, Set<number>> = new Map();
@@ -314,6 +315,15 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
 
     // Send notification
     await notificationService.send(`${rule.name}`, message);
+
+    // Broadcast to WebSocket clients
+    broadcast({
+      type: 'alert',
+      ruleName: rule.name,
+      message,
+      price: currentPrice,
+      timestamp: Date.now(),
+    });
 
     // Disable one-time rules
     if (rule.is_one_time) {
