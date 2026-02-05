@@ -141,9 +141,13 @@ K线数量: ${analysis.klineCount}根${volumeText}`;
     for (let i = 0; i < FIB_LEVELS.length; i++) {
       const level = FIB_LEVELS[i];
       const levelPrice = endPrice - range * level; // Retracement from end
-      const tolerance = Math.abs(range) * 0.002; // 0.2% tolerance
+      const tolerance = Math.abs(range) * 0.005; // 0.5% tolerance (increased from 0.2%)
 
-      if (Math.abs(currentPrice - levelPrice) <= tolerance && !triggeredSet.has(level)) {
+      // Check if price crossed the level (not just touched)
+      const priceDiff = currentPrice - levelPrice;
+      const crossedLevel = Math.abs(priceDiff) <= tolerance;
+
+      if (crossedLevel && !triggeredSet.has(level)) {
         triggeredSet.add(level);
 
         // Find next support and resistance
@@ -207,16 +211,18 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
     const confirmPercent = rule.confirm_percent || 0.3;
     const mode = rule.range_mode || 'touch';
 
+    // Determine current position
+    let currentState: 'inside' | 'above' | 'below' = 'inside';
+    if (currentPrice > upperPrice) {
+      currentState = 'above';
+    } else if (currentPrice < lowerPrice) {
+      currentState = 'below';
+    }
+
     // Initialize state for this rule
     if (!rangeLastState.has(rule.id)) {
-      if (currentPrice > upperPrice) {
-        rangeLastState.set(rule.id, 'above');
-      } else if (currentPrice < lowerPrice) {
-        rangeLastState.set(rule.id, 'below');
-      } else {
-        rangeLastState.set(rule.id, 'inside');
-      }
-      return { triggered: false, message: '' };
+      rangeLastState.set(rule.id, currentState);
+      // Don't return early - allow first check if near boundary
     }
 
     const lastState = rangeLastState.get(rule.id)!;
@@ -242,28 +248,36 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
     }
 
     if (mode === 'touch') {
-      // Touch mode: trigger when price touches upper or lower
-      const upperTolerance = upperPrice * 0.001;
-      const lowerTolerance = lowerPrice * 0.001;
+      // Touch mode: trigger when price touches upper or lower from any direction
+      const upperTolerance = upperPrice * 0.003; // 0.3% tolerance
+      const lowerTolerance = lowerPrice * 0.003;
 
-      if (Math.abs(currentPrice - upperPrice) <= upperTolerance && lastState === 'inside') {
-        rangeLastState.set(rule.id, newState);
+      // Trigger when approaching upper from inside or crossing from above
+      const nearUpper = Math.abs(currentPrice - upperPrice) <= upperTolerance;
+      const nearLower = Math.abs(currentPrice - lowerPrice) <= lowerTolerance;
+
+      if (nearUpper && lastState !== 'above') {
+        rangeLastState.set(rule.id, currentState);
+        const distancePercent = ((upperPrice - currentPrice) / currentPrice * 100).toFixed(2);
         const message = `${volumeEmoji}📊 BTC 触及区间上轨
 ━━━━━━━━━━━━━━━━
 当前价格: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 上轨价格: ${upperPrice.toLocaleString()}
+距离上轨: ${distancePercent}%
 区间宽度: ${rangeWidth}%${volumeText}
 ━━━━━━━━━━━━━━━━
 建议: 关注是否突破或回落`;
         return { triggered: true, message };
       }
 
-      if (Math.abs(currentPrice - lowerPrice) <= lowerTolerance && lastState === 'inside') {
-        rangeLastState.set(rule.id, newState);
+      if (nearLower && lastState !== 'below') {
+        rangeLastState.set(rule.id, currentState);
+        const distancePercent = ((currentPrice - lowerPrice) / currentPrice * 100).toFixed(2);
         const message = `${volumeEmoji}📊 BTC 触及区间下轨
 ━━━━━━━━━━━━━━━━
 当前价格: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 下轨价格: ${lowerPrice.toLocaleString()}
+距离下轨: ${distancePercent}%
 区间宽度: ${rangeWidth}%${volumeText}
 ━━━━━━━━━━━━━━━━
 建议: 关注是否跌破或反弹`;
@@ -282,7 +296,8 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
 ━━━━━━━━━━━━━━━━
 当前价格: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 上轨价格: ${upperPrice.toLocaleString()}
-突破幅度: ${breakoutPercent}%${volumeText}
+突破幅度: ${breakoutPercent}%
+确认阈值: ${confirmPercent}%${volumeText}
 ━━━━━━━━━━━━━━━━
 建议: ${volumeAdvice}`;
         return { triggered: true, message };
@@ -296,14 +311,15 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
 ━━━━━━━━━━━━━━━━
 当前价格: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 下轨价格: ${lowerPrice.toLocaleString()}
-跌破幅度: ${breakoutPercent}%${volumeText}
+跌破幅度: ${breakoutPercent}%
+确认阈值: ${confirmPercent}%${volumeText}
 ━━━━━━━━━━━━━━━━
 建议: ${volumeAdvice}`;
         return { triggered: true, message };
       }
     }
 
-    rangeLastState.set(rule.id, newState);
+    rangeLastState.set(rule.id, currentState);
     return { triggered: false, message: '' };
   }
 
