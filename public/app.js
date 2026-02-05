@@ -306,14 +306,73 @@ function renderRules() {
 
   rulesListEl.innerHTML = rules.map(rule => {
     let conditionText = '';
+    let distanceHtml = '';
+
     if (rule.type === 'volatility') {
       conditionText = `±${rule.volatility_percent}% / ${rule.volatility_window}分钟`;
     } else if (rule.type === 'fibonacci') {
       conditionText = `${rule.start_price?.toLocaleString()} → ${rule.end_price?.toLocaleString()}`;
+      // Calculate nearest fib level distance
+      if (currentPrice && rule.start_price && rule.end_price) {
+        const fibLevels = [0.236, 0.382, 0.5, 0.618, 0.786];
+        const range = rule.end_price - rule.start_price;
+        let nearestDist = Infinity;
+        let nearestLevel = 0;
+        let nearestPrice = 0;
+        fibLevels.forEach(level => {
+          const levelPrice = rule.end_price - range * level;
+          const dist = Math.abs(currentPrice - levelPrice);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestLevel = level;
+            nearestPrice = levelPrice;
+          }
+        });
+        const distPercent = ((nearestPrice - currentPrice) / currentPrice * 100);
+        const distDir = distPercent > 0 ? '↑' : '↓';
+        distanceHtml = `<div class="rule-distance">
+          <span class="distance-label">距 ${(nearestLevel * 100).toFixed(1)}%位</span>
+          <span class="distance-value ${distPercent > 0 ? 'up' : 'down'}">${distDir} ${Math.abs(distPercent).toFixed(2)}%</span>
+          <span class="distance-price">${nearestPrice.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+        </div>`;
+      }
     } else if (rule.type === 'range') {
-      conditionText = `${rule.lower_price?.toLocaleString()} - ${rule.upper_price?.toLocaleString()}`;
+      const modeText = rule.range_mode === 'breakout' ? '突破' : '触碰';
+      conditionText = `${rule.lower_price?.toLocaleString()} - ${rule.upper_price?.toLocaleString()} (${modeText})`;
+      // Calculate distance to nearest boundary
+      if (currentPrice && rule.upper_price && rule.lower_price) {
+        const distToUpper = ((rule.upper_price - currentPrice) / currentPrice * 100);
+        const distToLower = ((currentPrice - rule.lower_price) / currentPrice * 100);
+        const rangeWidth = ((rule.upper_price - rule.lower_price) / rule.lower_price * 100).toFixed(1);
+        distanceHtml = `<div class="rule-distance range-distance">
+          <span class="distance-item up">
+            <span class="distance-label">距上轨</span>
+            <span class="distance-value">${distToUpper > 0 ? '↑' : '↓'} ${Math.abs(distToUpper).toFixed(2)}%</span>
+          </span>
+          <span class="distance-item down">
+            <span class="distance-label">距下轨</span>
+            <span class="distance-value">${distToLower > 0 ? '↓' : '↑'} ${Math.abs(distToLower).toFixed(2)}%</span>
+          </span>
+          <span class="distance-item width">
+            <span class="distance-label">区间</span>
+            <span class="distance-value">${rangeWidth}%</span>
+          </span>
+        </div>`;
+      }
     } else {
+      // threshold_above or threshold_below
       conditionText = `${rule.threshold?.toLocaleString()} USDT`;
+      if (currentPrice && rule.threshold) {
+        const distPercent = ((rule.threshold - currentPrice) / currentPrice * 100);
+        const distDir = distPercent > 0 ? '↑' : '↓';
+        const distClass = (rule.type === 'threshold_above' && distPercent > 0) ||
+                          (rule.type === 'threshold_below' && distPercent < 0) ? 'pending' : 'reached';
+        distanceHtml = `<div class="rule-distance">
+          <span class="distance-label">距目标</span>
+          <span class="distance-value ${distClass}">${distDir} ${Math.abs(distPercent).toFixed(2)}%</span>
+          <span class="distance-abs">${Math.abs(rule.threshold - currentPrice).toLocaleString(undefined, {maximumFractionDigits: 0})} USDT</span>
+        </div>`;
+      }
     }
 
     const volumeTag = rule.with_volume ? `
@@ -347,6 +406,7 @@ function renderRules() {
           <span class="condition-value">${conditionText}</span>
           <span class="rule-status ${rule.status}">${rule.status === 'active' ? '运行中' : '已暂停'}</span>
         </div>
+        ${distanceHtml}
         <div class="rule-meta">
           <span class="meta-tag">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -559,6 +619,11 @@ function updatePrice(price, change24h) {
   updateThresholdVisual();
   updateFibonacciVisual();
   updateRangeVisual();
+
+  // Re-render rules to update distance display
+  if (rules.length > 0) {
+    renderRules();
+  }
 }
 
 function showNotification(data) {

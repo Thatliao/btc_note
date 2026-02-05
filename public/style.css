@@ -902,7 +902,80 @@ body {
   padding: 12px 14px;
   background: var(--bg-tertiary);
   border-radius: var(--radius-md);
+  margin-bottom: 10px;
+}
+
+/* Rule Distance Display */
+.rule-distance {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border-radius: var(--radius-sm);
   margin-bottom: 14px;
+  font-size: 0.8rem;
+}
+
+.rule-distance .distance-label {
+  color: var(--text-muted);
+}
+
+.rule-distance .distance-value {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.rule-distance .distance-value.up,
+.rule-distance .distance-value.pending {
+  color: var(--accent-green);
+}
+
+.rule-distance .distance-value.down {
+  color: var(--accent-red);
+}
+
+.rule-distance .distance-value.reached {
+  color: var(--accent-orange);
+}
+
+.rule-distance .distance-price,
+.rule-distance .distance-abs {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+/* Range Distance */
+.range-distance {
+  justify-content: space-between;
+}
+
+.range-distance .distance-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.range-distance .distance-item .distance-label {
+  font-size: 0.7rem;
+}
+
+.range-distance .distance-item .distance-value {
+  font-size: 0.85rem;
+}
+
+.range-distance .distance-item.up .distance-value {
+  color: var(--accent-green);
+}
+
+.range-distance .distance-item.down .distance-value {
+  color: var(--accent-red);
+}
+
+.range-distance .distance-item.width .distance-value {
+  color: var(--accent-blue);
 }
 
 .condition-value {
