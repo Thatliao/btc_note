@@ -35,7 +35,7 @@ router.post('/', (req: Request, res: Response) => {
       cooldown_minutes, is_one_time,
       start_price, end_price,
       upper_price, lower_price, range_mode, confirm_percent,
-      with_volume
+      with_volume, alert_distance
     } = req.body;
 
     if (!name || !type) {
@@ -75,6 +75,7 @@ router.post('/', (req: Request, res: Response) => {
       range_mode: range_mode || null,
       confirm_percent: confirm_percent || null,
       with_volume: with_volume ? 1 : 0,
+      alert_distance: alert_distance || null,
     });
 
     res.status(201).json(rule);

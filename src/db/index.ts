@@ -43,12 +43,13 @@ export async function initDatabase(): Promise<Database> {
       lower_price REAL,
       range_mode TEXT,
       confirm_percent REAL,
-      with_volume INTEGER
+      with_volume INTEGER,
+      alert_distance REAL
     )
   `);
 
   // Add new columns for existing databases (migrations)
-  const columns = ['start_price', 'end_price', 'upper_price', 'lower_price', 'range_mode', 'confirm_percent', 'with_volume'];
+  const columns = ['start_price', 'end_price', 'upper_price', 'lower_price', 'range_mode', 'confirm_percent', 'with_volume', 'alert_distance'];
   for (const col of columns) {
     try {
       db.run(`ALTER TABLE alert_rules ADD COLUMN ${col} ${col === 'range_mode' ? 'TEXT' : col === 'with_volume' ? 'INTEGER' : 'REAL'}`);
@@ -120,6 +121,8 @@ export interface AlertRule {
   confirm_percent: number | null;
   // Volume option
   with_volume: number | null;
+  // Alert distance (percentage to trigger early warning)
+  alert_distance: number | null;
 }
 
 export interface AlertHistory {

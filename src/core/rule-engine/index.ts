@@ -7,6 +7,8 @@ import { broadcast } from '../websocket';
 // Track last triggered fibonacci levels and range states per rule
 const fibTriggeredLevels: Map<string, Set<number>> = new Map();
 const rangeLastState: Map<string, 'inside' | 'above' | 'below'> = new Map();
+// Track early warning triggers to avoid duplicate alerts
+const earlyWarningTriggered: Map<string, boolean> = new Map();
 
 const FIB_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786];
 
@@ -29,19 +31,24 @@ class RuleEngine {
 
       let triggered = false;
       let message = '';
+      let isEarlyWarning = false;
 
       switch (rule.type) {
         case 'threshold_above':
-          if (rule.threshold && priceData.price >= rule.threshold) {
-            triggered = true;
-            message = `📈 ${rule.symbol} 价格突破 ${rule.threshold}\n当前价格: ${priceData.price.toFixed(2)}`;
+          if (rule.threshold) {
+            const result = this.checkThresholdAbove(rule, priceData);
+            triggered = result.triggered;
+            message = result.message;
+            isEarlyWarning = result.isEarlyWarning;
           }
           break;
 
         case 'threshold_below':
-          if (rule.threshold && priceData.price <= rule.threshold) {
-            triggered = true;
-            message = `📉 ${rule.symbol} 价格跌破 ${rule.threshold}\n当前价格: ${priceData.price.toFixed(2)}`;
+          if (rule.threshold) {
+            const result = this.checkThresholdBelow(rule, priceData);
+            triggered = result.triggered;
+            message = result.message;
+            isEarlyWarning = result.isEarlyWarning;
           }
           break;
 
@@ -71,9 +78,106 @@ class RuleEngine {
       }
 
       if (triggered) {
-        this.triggerAlert(rule, priceData.price, message);
+        this.triggerAlert(rule, priceData.price, message, isEarlyWarning);
       }
     }
+  }
+
+  private checkThresholdAbove(rule: AlertRule, priceData: PriceData): { triggered: boolean; message: string; isEarlyWarning: boolean } {
+    const threshold = rule.threshold!;
+    const currentPrice = priceData.price;
+    const alertDistance = rule.alert_distance || 0;
+    const earlyKey = `${rule.id}_early`;
+
+    // Check if already triggered target
+    if (currentPrice >= threshold) {
+      // Reset early warning flag when target is reached
+      earlyWarningTriggered.delete(earlyKey);
+      const distPercent = ((currentPrice - threshold) / threshold * 100).toFixed(2);
+      return {
+        triggered: true,
+        isEarlyWarning: false,
+        message: `🎯 BTC 突破目标价位
+━━━━━━━━━━━━━━━━
+当前价格: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+目标价格: ${threshold.toLocaleString()}
+超出幅度: +${distPercent}%
+━━━━━━━━━━━━━━━━
+状态: 已突破目标`
+      };
+    }
+
+    // Check early warning
+    if (alertDistance > 0 && !earlyWarningTriggered.get(earlyKey)) {
+      const earlyThreshold = threshold * (1 - alertDistance / 100);
+      if (currentPrice >= earlyThreshold) {
+        earlyWarningTriggered.set(earlyKey, true);
+        const distToTarget = ((threshold - currentPrice) / currentPrice * 100).toFixed(2);
+        const distUsdt = (threshold - currentPrice).toFixed(0);
+        return {
+          triggered: true,
+          isEarlyWarning: true,
+          message: `⚠️ BTC 接近突破目标
+━━━━━━━━━━━━━━━━
+当前价格: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+目标价格: ${threshold.toLocaleString()}
+距离目标: ↑ ${distToTarget}% (${distUsdt} USDT)
+预警范围: ${alertDistance}%
+━━━━━━━━━━━━━━━━
+状态: 即将突破，请关注`
+        };
+      }
+    }
+
+    return { triggered: false, message: '', isEarlyWarning: false };
+  }
+
+  private checkThresholdBelow(rule: AlertRule, priceData: PriceData): { triggered: boolean; message: string; isEarlyWarning: boolean } {
+    const threshold = rule.threshold!;
+    const currentPrice = priceData.price;
+    const alertDistance = rule.alert_distance || 0;
+    const earlyKey = `${rule.id}_early`;
+
+    // Check if already triggered target
+    if (currentPrice <= threshold) {
+      earlyWarningTriggered.delete(earlyKey);
+      const distPercent = ((threshold - currentPrice) / threshold * 100).toFixed(2);
+      return {
+        triggered: true,
+        isEarlyWarning: false,
+        message: `🎯 BTC 跌破目标价位
+━━━━━━━━━━━━━━━━
+当前价格: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+目标价格: ${threshold.toLocaleString()}
+跌破幅度: -${distPercent}%
+━━━━━━━━━━━━━━━━
+状态: 已跌破目标`
+      };
+    }
+
+    // Check early warning
+    if (alertDistance > 0 && !earlyWarningTriggered.get(earlyKey)) {
+      const earlyThreshold = threshold * (1 + alertDistance / 100);
+      if (currentPrice <= earlyThreshold) {
+        earlyWarningTriggered.set(earlyKey, true);
+        const distToTarget = ((currentPrice - threshold) / currentPrice * 100).toFixed(2);
+        const distUsdt = (currentPrice - threshold).toFixed(0);
+        return {
+          triggered: true,
+          isEarlyWarning: true,
+          message: `⚠️ BTC 接近跌破目标
+━━━━━━━━━━━━━━━━
+当前价格: ${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+目标价格: ${threshold.toLocaleString()}
+距离目标: ↓ ${distToTarget}% (${distUsdt} USDT)
+预警范围: ${alertDistance}%
+━━━━━━━━━━━━━━━━
+状态: 即将跌破，请关注`
+        };
+      }
+    }
+
+    return { triggered: false, message: '', isEarlyWarning: false };
   }
 
   private checkVolatility(rule: AlertRule, priceData: PriceData): { triggered: boolean; message: string } {
@@ -331,8 +435,8 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
     return Date.now() - lastTriggered < cooldownMs;
   }
 
-  private async triggerAlert(rule: AlertRule, currentPrice: number, message: string) {
-    console.log(`[RuleEngine] Alert triggered: ${rule.name}`);
+  private async triggerAlert(rule: AlertRule, currentPrice: number, message: string, isEarlyWarning: boolean = false) {
+    console.log(`[RuleEngine] Alert triggered: ${rule.name}${isEarlyWarning ? ' (early warning)' : ''}`);
 
     // Update last triggered time
     ruleRepository.updateLastTriggered(rule.id);
@@ -340,7 +444,7 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
     // Save to history
     historyRepository.create({
       rule_id: rule.id,
-      rule_name: rule.name,
+      rule_name: rule.name + (isEarlyWarning ? ' [预警]' : ''),
       symbol: rule.symbol,
       type: rule.type,
       current_price: currentPrice,
@@ -348,7 +452,7 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
     });
 
     // Send notification
-    await notificationService.send(`${rule.name}`, message);
+    await notificationService.send(`${rule.name}${isEarlyWarning ? ' [预警]' : ''}`, message);
 
     // Broadcast to WebSocket clients
     broadcast({

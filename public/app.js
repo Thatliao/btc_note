@@ -214,13 +214,16 @@ function setupForm() {
     } else if (currentType === 'fibonacci') {
       data.start_price = parseFloat(document.getElementById('rule-start-price').value);
       data.end_price = parseFloat(document.getElementById('rule-end-price').value);
+      data.alert_distance = parseFloat(document.getElementById('rule-alert-distance').value) || 0;
     } else if (currentType === 'range') {
       data.upper_price = parseFloat(document.getElementById('rule-upper-price').value);
       data.lower_price = parseFloat(document.getElementById('rule-lower-price').value);
       data.range_mode = document.getElementById('rule-range-mode').value;
       data.confirm_percent = parseFloat(document.getElementById('rule-confirm-percent').value);
+      data.alert_distance = parseFloat(document.getElementById('rule-alert-distance').value) || 0;
     } else {
       data.threshold = parseFloat(document.getElementById('rule-threshold').value);
+      data.alert_distance = parseFloat(document.getElementById('rule-alert-distance').value) || 0;
     }
 
     try {
@@ -251,6 +254,7 @@ function resetForm() {
   document.getElementById('rule-cooldown-slider').value = 5;
   document.getElementById('cooldown-display').textContent = '5';
   document.getElementById('rule-cooldown').value = 5;
+  document.getElementById('rule-alert-distance').value = 0;
   document.getElementById('cancel-btn').style.display = 'none';
   document.querySelector('.btn-text').textContent = '创建规则';
 
@@ -472,11 +476,13 @@ function editRule(id) {
   } else if (rule.type === 'fibonacci') {
     document.getElementById('rule-start-price').value = rule.start_price || '';
     document.getElementById('rule-end-price').value = rule.end_price || '';
+    document.getElementById('rule-alert-distance').value = rule.alert_distance || 0;
   } else if (rule.type === 'range') {
     document.getElementById('rule-upper-price').value = rule.upper_price || '';
     document.getElementById('rule-lower-price').value = rule.lower_price || '';
     document.getElementById('rule-range-mode').value = rule.range_mode || 'touch';
     document.getElementById('rule-confirm-percent').value = rule.confirm_percent || 0.3;
+    document.getElementById('rule-alert-distance').value = rule.alert_distance || 0;
     // Update mode buttons
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     document.querySelector(`.mode-btn[data-mode="${rule.range_mode || 'touch'}"]`)?.classList.add('active');
@@ -484,6 +490,7 @@ function editRule(id) {
       rule.range_mode === 'breakout' ? 'block' : 'none';
   } else {
     document.getElementById('rule-threshold').value = rule.threshold || '';
+    document.getElementById('rule-alert-distance').value = rule.alert_distance || 0;
   }
 
   // Common fields

@@ -112,6 +112,14 @@
                   <span class="input-suffix">USDT</span>
                 </div>
               </div>
+              <div class="form-field">
+                <label class="field-label">预警距离 (接近目标时提前提醒)</label>
+                <div class="price-input-wrapper">
+                  <input type="number" id="rule-alert-distance" class="field-input" step="0.1" min="0" max="10" placeholder="0.5" value="0">
+                  <span class="input-suffix">%</span>
+                </div>
+                <div class="field-hint">设为0则只在触及目标时提醒</div>
+              </div>
               <!-- Visual Price Indicator -->
               <div class="price-visual" id="threshold-visual">
                 <div class="visual-bar">
