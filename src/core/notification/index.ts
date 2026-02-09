@@ -11,13 +11,14 @@ class NotificationService {
       return false;
     }
 
-    if (!config.serverChan.sendKey) {
-      console.log('[Notification] No SendKey configured, skipping');
+    if (!config.serverChan.uid || !config.serverChan.sendKey) {
+      console.log('[Notification] No UID or SendKey configured, skipping');
       return false;
     }
 
     try {
-      const url = `${config.serverChan.apiUrl}/${config.serverChan.sendKey}.send`;
+      // Server酱³ API: https://<uid>.push.ft07.com/send/<sendkey>.send
+      const url = `https://${config.serverChan.uid}.push.ft07.com/send/${config.serverChan.sendKey}.send`;
       const params = new URLSearchParams();
       params.append('title', title.slice(0, 32));
       params.append('desp', content);
