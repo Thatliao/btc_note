@@ -4,6 +4,8 @@ const API_BASE = '/api';
 let rules = [];
 let currentPrice = null;
 let currentType = 'threshold_above';
+let reconnectTimer = null;
+let rulesRenderScheduled = false;
 
 // DOM Elements
 const currentPriceEl = document.getElementById('current-price');
@@ -12,7 +14,13 @@ const connectionStatus = document.getElementById('connection-status');
 const rulesListEl = document.getElementById('rules-list');
 const historyListEl = document.getElementById('history-list');
 const ruleCountEl = document.getElementById('rule-count');
+const headerRuleCountEl = document.getElementById('header-rule-count');
+const headerHistoryCountEl = document.getElementById('header-history-count');
+const marketTrendEl = document.getElementById('market-trend');
+const lastUpdatedEl = document.getElementById('last-updated');
 const ruleForm = document.getElementById('rule-form');
+const toastContainer = document.getElementById('toast-container');
+const confirmLayer = document.getElementById('confirm-layer');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -20,10 +28,193 @@ document.addEventListener('DOMContentLoaded', () => {
   setupForm();
   setupModeToggle();
   setupSliders();
+  setupKeyboardShortcuts();
+  setupFieldSmartFeatures();
   loadRules();
   loadHistory();
   connectWebSocket();
 });
+
+async function request(url, options = {}) {
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const data = await res.json();
+      message = data.error || data.message || message;
+    } catch {
+      const text = await res.text();
+      if (text) {
+        message = text;
+      }
+    }
+    throw new Error(message);
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return res.json();
+  }
+  return null;
+}
+
+function showToast(message, type = 'info', timeout = 2400) {
+  if (!toastContainer) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  toastContainer.appendChild(toast);
+
+  requestAnimationFrame(() => {
+    toast.classList.add('show');
+  });
+
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 240);
+  }, timeout);
+}
+
+function scheduleRulesRender() {
+  if (rulesRenderScheduled || rules.length === 0) return;
+  rulesRenderScheduled = true;
+  requestAnimationFrame(() => {
+    renderRules();
+    rulesRenderScheduled = false;
+  });
+}
+
+function setButtonLoading(buttonEl, loading, loadingText = '处理中...') {
+  if (!buttonEl) return;
+  const textEl = buttonEl.querySelector('.btn-text');
+  if (loading) {
+    buttonEl.dataset.originalText = textEl?.textContent || '';
+    buttonEl.disabled = true;
+    buttonEl.classList.add('is-loading');
+    if (textEl) textEl.textContent = loadingText;
+    return;
+  }
+
+  buttonEl.disabled = false;
+  buttonEl.classList.remove('is-loading');
+  if (textEl && buttonEl.dataset.originalText) {
+    textEl.textContent = buttonEl.dataset.originalText;
+  }
+}
+
+function showConfirm({ title = '请确认', message = '确定继续吗？', confirmText = '确认', cancelText = '取消', danger = false } = {}) {
+  if (!confirmLayer) {
+    return Promise.resolve(window.confirm(message));
+  }
+
+  return new Promise(resolve => {
+    confirmLayer.classList.remove('hidden');
+    confirmLayer.setAttribute('aria-hidden', 'false');
+    confirmLayer.innerHTML = `
+      <div class="confirm-dialog" role="dialog" aria-modal="true">
+        <div class="confirm-title">${title}</div>
+        <div class="confirm-message">${message}</div>
+        <div class="confirm-actions">
+          <button type="button" class="confirm-btn cancel">${cancelText}</button>
+          <button type="button" class="confirm-btn ${danger ? 'danger' : 'primary'}">${confirmText}</button>
+        </div>
+      </div>
+    `;
+
+    const onLayerClick = (event) => {
+      if (event.target === confirmLayer) cleanup(false);
+    };
+
+    const cleanup = (value) => {
+      confirmLayer.classList.add('hidden');
+      confirmLayer.setAttribute('aria-hidden', 'true');
+      confirmLayer.innerHTML = '';
+      document.removeEventListener('keydown', onKeydown);
+      confirmLayer.removeEventListener('click', onLayerClick);
+      resolve(value);
+    };
+
+    const onKeydown = (event) => {
+      if (event.key === 'Escape') cleanup(false);
+    };
+
+    confirmLayer.querySelector('.confirm-btn.cancel')?.addEventListener('click', () => cleanup(false));
+    confirmLayer.querySelector('.confirm-btn:not(.cancel)')?.addEventListener('click', () => cleanup(true));
+    confirmLayer.addEventListener('click', onLayerClick);
+    document.addEventListener('keydown', onKeydown);
+  });
+}
+
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', (event) => {
+    const target = event.target;
+    if (target && (target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+      return;
+    }
+    const isSubmitShortcut = (event.metaKey || event.ctrlKey) && event.key === 'Enter';
+    if (!isSubmitShortcut) return;
+    event.preventDefault();
+    ruleForm?.requestSubmit();
+  });
+}
+
+function setupFieldSmartFeatures() {
+  const nameInput = document.getElementById('rule-name');
+  if (!nameInput) return;
+
+  document.querySelectorAll('.type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (nameInput.value.trim()) return;
+      const label = btn.querySelector('span')?.textContent || '提醒';
+      nameInput.value = `BTC ${label}提醒`;
+    });
+  });
+}
+
+function updateHeaderStats({ ruleCount, historyCount } = {}) {
+  if (typeof ruleCount === 'number') {
+    ruleCountEl.textContent = ruleCount;
+    if (headerRuleCountEl) headerRuleCountEl.textContent = ruleCount;
+  }
+  if (typeof historyCount === 'number' && headerHistoryCountEl) {
+    headerHistoryCountEl.textContent = historyCount;
+  }
+}
+
+function updateConnectionState(state, text) {
+  if (!connectionStatus) return;
+  connectionStatus.classList.remove('connected', 'disconnected', 'connecting');
+  connectionStatus.classList.add(state);
+  const statusTextEl = connectionStatus.querySelector('.status-text');
+  if (statusTextEl) {
+    statusTextEl.textContent = text;
+  }
+}
+
+function updateTickerMeta(change24h) {
+  if (lastUpdatedEl) {
+    const timeText = new Date().toLocaleTimeString('zh-CN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    lastUpdatedEl.textContent = `更新 ${timeText}`;
+  }
+
+  if (marketTrendEl && typeof change24h === 'number') {
+    if (change24h > 1.2) {
+      marketTrendEl.textContent = '短线偏强';
+      marketTrendEl.className = 'ticker-meta-item up';
+    } else if (change24h < -1.2) {
+      marketTrendEl.textContent = '短线偏弱';
+      marketTrendEl.className = 'ticker-meta-item down';
+    } else {
+      marketTrendEl.textContent = '震荡监控中';
+      marketTrendEl.className = 'ticker-meta-item';
+    }
+  }
+}
 
 // Type Selector
 function setupTypeSelector() {
@@ -198,6 +389,7 @@ function setupForm() {
 
   ruleForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    setButtonLoading(submitBtn, true, '保存中...');
 
     const editingId = document.getElementById('rule-id').value;
     const data = {
@@ -219,31 +411,61 @@ function setupForm() {
       data.upper_price = parseFloat(document.getElementById('rule-upper-price').value);
       data.lower_price = parseFloat(document.getElementById('rule-lower-price').value);
       data.range_mode = document.getElementById('rule-range-mode').value;
-      data.confirm_percent = parseFloat(document.getElementById('rule-confirm-percent').value);
+      data.confirm_percent = parseFloat(document.getElementById('rule-confirm-percent').value) || 0.3;
       data.alert_distance = parseFloat(document.getElementById('rule-alert-distance').value) || 0;
     } else {
       data.threshold = parseFloat(document.getElementById('rule-threshold').value);
       data.alert_distance = parseFloat(document.getElementById('rule-alert-distance').value) || 0;
     }
 
+    if (!data.name || !data.name.trim()) {
+      showToast('请填写规则名称', 'warning');
+      setButtonLoading(submitBtn, false);
+      return;
+    }
+
+    if ((currentType === 'threshold_above' || currentType === 'threshold_below') && !data.threshold) {
+      showToast('请填写目标价格', 'warning');
+      setButtonLoading(submitBtn, false);
+      return;
+    }
+
+    if (currentType === 'range' && (!data.upper_price || !data.lower_price || data.upper_price <= data.lower_price)) {
+      showToast('区间价格需满足上轨 > 下轨', 'warning');
+      setButtonLoading(submitBtn, false);
+      return;
+    }
+
+    if (currentType === 'fibonacci' && (!data.start_price || !data.end_price || data.start_price === data.end_price)) {
+      showToast('请填写有效的斐波那契起止价格', 'warning');
+      setButtonLoading(submitBtn, false);
+      return;
+    }
+
     try {
       if (editingId) {
-        await fetch(`${API_BASE}/rules/${editingId}`, {
+        await request(`${API_BASE}/rules/${editingId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
         });
+        showToast('规则已更新', 'success');
       } else {
-        await fetch(`${API_BASE}/rules`, {
+        await request(`${API_BASE}/rules`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
         });
+        showToast('规则创建成功', 'success');
       }
       resetForm();
-      loadRules();
+      await loadRules();
     } catch (err) {
-      alert('保存失败: ' + err.message);
+      showToast('保存失败：' + err.message, 'error', 3600);
+    } finally {
+      setButtonLoading(submitBtn, false);
+      const activeId = document.getElementById('rule-id').value;
+      document.querySelector('#submit-btn .btn-text').textContent = activeId ? '保存修改' : '创建规则';
     }
   });
 }
@@ -256,7 +478,11 @@ function resetForm() {
   document.getElementById('rule-cooldown').value = 5;
   document.getElementById('rule-alert-distance').value = 0;
   document.getElementById('cancel-btn').style.display = 'none';
-  document.querySelector('.btn-text').textContent = '创建规则';
+  document.querySelector('#submit-btn .btn-text').textContent = '创建规则';
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('.mode-btn[data-mode="touch"]')?.classList.add('active');
+  document.getElementById('rule-range-mode').value = 'touch';
+  document.getElementById('confirm-percent-group').style.display = 'none';
 
   // Reset type selector
   document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
@@ -268,12 +494,12 @@ function resetForm() {
 // Load Rules
 async function loadRules() {
   try {
-    const res = await fetch(`${API_BASE}/rules`);
-    rules = await res.json();
-    ruleCountEl.textContent = rules.length;
+    rules = await request(`${API_BASE}/rules`);
+    updateHeaderStats({ ruleCount: rules.length });
     renderRules();
   } catch (err) {
     console.error('Failed to load rules:', err);
+    showToast('规则加载失败，请稍后重试', 'error', 3200);
   }
 }
 
@@ -450,10 +676,11 @@ function renderRules() {
 // Rule Actions
 async function toggleRule(id) {
   try {
-    await fetch(`${API_BASE}/rules/${id}/toggle`, { method: 'POST' });
-    loadRules();
+    await request(`${API_BASE}/rules/${id}/toggle`, { method: 'POST' });
+    await loadRules();
+    showToast('规则状态已切换', 'success');
   } catch (err) {
-    alert('操作失败: ' + err.message);
+    showToast('操作失败：' + err.message, 'error', 3000);
   }
 }
 
@@ -502,36 +729,47 @@ function editRule(id) {
 
   // Update UI
   document.getElementById('cancel-btn').style.display = 'block';
-  document.querySelector('.btn-text').textContent = '保存修改';
+  document.querySelector('#submit-btn .btn-text').textContent = '保存修改';
   updateFormFields(rule.type);
+  showToast(`正在编辑：${rule.name}`, 'info', 2000);
 
   // Scroll to form
   document.querySelector('.panel-creator').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 async function deleteRule(id) {
-  if (!confirm('确定要删除这条规则吗？')) return;
+  const confirmed = await showConfirm({
+    title: '删除规则',
+    message: '删除后无法恢复，是否继续？',
+    confirmText: '删除',
+    cancelText: '取消',
+    danger: true,
+  });
+  if (!confirmed) return;
+
   try {
-    await fetch(`${API_BASE}/rules/${id}`, { method: 'DELETE' });
-    loadRules();
+    await request(`${API_BASE}/rules/${id}`, { method: 'DELETE' });
+    await loadRules();
+    showToast('规则已删除', 'success');
   } catch (err) {
-    alert('删除失败: ' + err.message);
+    showToast('删除失败：' + err.message, 'error', 3200);
   }
 }
 
 // Load History
 async function loadHistory() {
   try {
-    const res = await fetch(`${API_BASE}/alerts?limit=50`);
-    const history = await res.json();
+    const history = await request(`${API_BASE}/alerts?limit=50`);
     renderHistory(history);
   } catch (err) {
     console.error('Failed to load history:', err);
+    showToast('历史记录加载失败', 'error', 2800);
   }
 }
 
 function renderHistory(history) {
   if (history.length === 0) {
+    updateHeaderStats({ historyCount: 0 });
     historyListEl.innerHTML = `
       <div class="empty-state">
         <svg class="empty-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -545,6 +783,8 @@ function renderHistory(history) {
     `;
     return;
   }
+
+  updateHeaderStats({ historyCount: history.length });
 
   historyListEl.innerHTML = history.map(item => {
     const time = new Date(item.triggered_at).toLocaleString('zh-CN', {
@@ -571,25 +811,25 @@ function renderHistory(history) {
 // WebSocket Connection
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  updateConnectionState('connecting', '连接中...');
   const ws = new WebSocket(`${protocol}//${window.location.host}`);
 
   ws.onopen = () => {
-    connectionStatus.classList.add('connected');
-    connectionStatus.classList.remove('disconnected');
-    connectionStatus.querySelector('.status-text').textContent = '已连接';
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    updateConnectionState('connected', '实时连接');
+    showToast('行情连接已建立', 'success', 1500);
   };
 
   ws.onclose = () => {
-    connectionStatus.classList.remove('connected');
-    connectionStatus.classList.add('disconnected');
-    connectionStatus.querySelector('.status-text').textContent = '已断开';
-    // Reconnect after 3 seconds
-    setTimeout(connectWebSocket, 3000);
+    updateConnectionState('disconnected', '连接断开');
+    reconnectTimer = setTimeout(connectWebSocket, 3000);
   };
 
   ws.onerror = () => {
-    connectionStatus.classList.remove('connected');
-    connectionStatus.classList.add('disconnected');
+    updateConnectionState('disconnected', '连接异常');
   };
 
   ws.onmessage = (event) => {
@@ -622,18 +862,19 @@ function updatePrice(price, change24h) {
     changeEl.querySelector('.change-value').textContent = `${isUp ? '+' : ''}${change24h.toFixed(2)}%`;
   }
 
+  updateTickerMeta(change24h);
+
   // Update visuals
   updateThresholdVisual();
   updateFibonacciVisual();
   updateRangeVisual();
 
   // Re-render rules to update distance display
-  if (rules.length > 0) {
-    renderRules();
-  }
+  scheduleRulesRender();
 }
 
 function showNotification(data) {
+  showToast(data.message.split('\n')[0] || '触发新提醒', 'warning', 3200);
   if (Notification.permission === 'granted') {
     new Notification('BTC Alert', {
       body: data.message,
