@@ -451,8 +451,12 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
       message,
     });
 
+    // Build rich title for notification
+    const priceStr = currentPrice.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const title = this.buildNotificationTitle(rule, currentPrice, isEarlyWarning);
+
     // Send notification
-    await notificationService.send(`${rule.name}${isEarlyWarning ? ' [预警]' : ''}`, message);
+    await notificationService.send(title, message);
 
     // Broadcast to WebSocket clients
     broadcast({
@@ -473,6 +477,53 @@ ${nextResistance ? `下一阻力: ${nextResistance}` : ''}`.trim();
   stop() {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
+    }
+  }
+
+  private buildNotificationTitle(rule: AlertRule, currentPrice: number, isEarlyWarning: boolean): string {
+    const priceStr = currentPrice.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    const symbol = rule.symbol.toUpperCase();
+
+    switch (rule.type) {
+      case 'threshold_above':
+        if (isEarlyWarning) {
+          return `⚠️${symbol} ${priceStr} 接近突破`;
+        }
+        return `🚀${symbol} ${priceStr} 突破!`;
+
+      case 'threshold_below':
+        if (isEarlyWarning) {
+          return `⚠️${symbol} ${priceStr} 接近跌破`;
+        }
+        return `💥${symbol} ${priceStr} 跌破!`;
+
+      case 'volatility': {
+        const analysis = priceMonitor.getVolatilityAnalysis(rule.symbol, rule.volatility_window || 5);
+        if (analysis) {
+          const dir = analysis.direction === 'up' ? '↑' : '↓';
+          const pct = Math.abs(analysis.changePercent).toFixed(1);
+          return `${analysis.direction === 'up' ? '🚀' : '💥'}${symbol} ${priceStr} ${dir}${pct}%`;
+        }
+        return `📈${symbol} ${priceStr} 剧烈波动`;
+      }
+
+      case 'fibonacci': {
+        return `📐${symbol} ${priceStr} 触及Fib`;
+      }
+
+      case 'range': {
+        const upper = rule.upper_price || 0;
+        const lower = rule.lower_price || 0;
+        if (currentPrice >= upper) {
+          return `🔺${symbol} ${priceStr} 触及上轨`;
+        } else if (currentPrice <= lower) {
+          return `🔻${symbol} ${priceStr} 触及下轨`;
+        }
+        return `📊${symbol} ${priceStr} 区间边界`;
+      }
+
+      default:
+        return `📢${symbol} ${priceStr}`;
     }
   }
 }
