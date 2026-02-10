@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getDb, saveDatabase, AlertRule, AlertHistory } from './index';
+import { getDb, saveDatabase, AlertRule, AlertHistory, NewsCache, PushHistory, MarketSnapshot } from './index';
 
 export const ruleRepository = {
   findAll(): AlertRule[] {
@@ -137,6 +137,170 @@ export const historyRepository = {
     const db = getDb();
     const before = db.getRowsModified();
     db.run("DELETE FROM alert_history WHERE triggered_at < datetime('now', ?)", [`-${days} days`]);
+    const after = db.getRowsModified();
+    saveDatabase();
+    return after - before;
+  },
+};
+
+// ========== 资讯聚合相关 Repository ==========
+
+export const newsCacheRepository = {
+  findRecent(limit = 50): NewsCache[] {
+    const db = getDb();
+    const stmt = db.prepare('SELECT * FROM news_cache ORDER BY collected_at DESC LIMIT ?');
+    stmt.bind([limit]);
+    const results: NewsCache[] = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject() as unknown as NewsCache);
+    }
+    stmt.free();
+    return results;
+  },
+
+  findByCategory(category: string, limit = 20): NewsCache[] {
+    const db = getDb();
+    const stmt = db.prepare('SELECT * FROM news_cache WHERE category = ? ORDER BY collected_at DESC LIMIT ?');
+    stmt.bind([category, limit]);
+    const results: NewsCache[] = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject() as unknown as NewsCache);
+    }
+    stmt.free();
+    return results;
+  },
+
+  findUnpushed(limit = 50): NewsCache[] {
+    const db = getDb();
+    const stmt = db.prepare('SELECT * FROM news_cache WHERE is_pushed = 0 ORDER BY importance DESC, collected_at DESC LIMIT ?');
+    stmt.bind([limit]);
+    const results: NewsCache[] = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject() as unknown as NewsCache);
+    }
+    stmt.free();
+    return results;
+  },
+
+  create(item: Omit<NewsCache, 'id' | 'collected_at' | 'is_pushed'>): NewsCache {
+    const db = getDb();
+    const id = uuidv4();
+    db.run(`
+      INSERT INTO news_cache (id, source, category, title, content, url, importance, published_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [id, item.source, item.category, item.title, item.content, item.url, item.importance, item.published_at]);
+    saveDatabase();
+    return { ...item, id, collected_at: new Date().toISOString(), is_pushed: 0 };
+  },
+
+  markPushed(ids: string[]): void {
+    const db = getDb();
+    for (const id of ids) {
+      db.run('UPDATE news_cache SET is_pushed = 1 WHERE id = ?', [id]);
+    }
+    saveDatabase();
+  },
+
+  existsByTitle(title: string): boolean {
+    const db = getDb();
+    const stmt = db.prepare('SELECT COUNT(*) as cnt FROM news_cache WHERE title = ?');
+    stmt.bind([title]);
+    let exists = false;
+    if (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      exists = row.cnt > 0;
+    }
+    stmt.free();
+    return exists;
+  },
+
+  deleteOlderThan(days: number): number {
+    const db = getDb();
+    const before = db.getRowsModified();
+    db.run("DELETE FROM news_cache WHERE collected_at < datetime('now', ?)", [`-${days} days`]);
+    const after = db.getRowsModified();
+    saveDatabase();
+    return after - before;
+  },
+};
+
+export const pushHistoryRepository = {
+  findAll(limit = 50): PushHistory[] {
+    const db = getDb();
+    const stmt = db.prepare('SELECT * FROM push_history ORDER BY pushed_at DESC LIMIT ?');
+    stmt.bind([limit]);
+    const results: PushHistory[] = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject() as unknown as PushHistory);
+    }
+    stmt.free();
+    return results;
+  },
+
+  findByType(type: string, limit = 20): PushHistory[] {
+    const db = getDb();
+    const stmt = db.prepare('SELECT * FROM push_history WHERE type = ? ORDER BY pushed_at DESC LIMIT ?');
+    stmt.bind([type, limit]);
+    const results: PushHistory[] = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject() as unknown as PushHistory);
+    }
+    stmt.free();
+    return results;
+  },
+
+  create(item: Omit<PushHistory, 'id' | 'pushed_at'>): PushHistory {
+    const db = getDb();
+    const id = uuidv4();
+    db.run(`
+      INSERT INTO push_history (id, type, content, ai_model, data_sources, status)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [id, item.type, item.content, item.ai_model, item.data_sources, item.status]);
+    saveDatabase();
+    return { ...item, id, pushed_at: new Date().toISOString() };
+  },
+};
+
+export const marketSnapshotRepository = {
+  findLatest(snapshotType: string): MarketSnapshot | undefined {
+    const db = getDb();
+    const stmt = db.prepare('SELECT * FROM market_snapshots WHERE snapshot_type = ? ORDER BY created_at DESC LIMIT 1');
+    stmt.bind([snapshotType]);
+    let result: MarketSnapshot | undefined;
+    if (stmt.step()) {
+      result = stmt.getAsObject() as unknown as MarketSnapshot;
+    }
+    stmt.free();
+    return result;
+  },
+
+  findRecent(snapshotType: string, limit = 24): MarketSnapshot[] {
+    const db = getDb();
+    const stmt = db.prepare('SELECT * FROM market_snapshots WHERE snapshot_type = ? ORDER BY created_at DESC LIMIT ?');
+    stmt.bind([snapshotType, limit]);
+    const results: MarketSnapshot[] = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject() as unknown as MarketSnapshot);
+    }
+    stmt.free();
+    return results;
+  },
+
+  create(item: Omit<MarketSnapshot, 'id' | 'created_at'>): MarketSnapshot {
+    const db = getDb();
+    const id = uuidv4();
+    db.run(`
+      INSERT INTO market_snapshots (id, snapshot_type, data)
+      VALUES (?, ?, ?)
+    `, [id, item.snapshot_type, item.data]);
+    saveDatabase();
+    return { ...item, id, created_at: new Date().toISOString() };
+  },
+
+  deleteOlderThan(days: number): number {
+    const db = getDb();
+    const before = db.getRowsModified();
+    db.run("DELETE FROM market_snapshots WHERE created_at < datetime('now', ?)", [`-${days} days`]);
     const after = db.getRowsModified();
     saveDatabase();
     return after - before;

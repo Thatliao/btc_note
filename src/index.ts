@@ -8,6 +8,7 @@ import { setupApi } from './api';
 import { priceMonitor } from './core/price-monitor';
 import { ruleEngine } from './core/rule-engine';
 import { addClient, removeClient, broadcast } from './core/websocket';
+import { startAggregator, stopAggregator } from './core/news-aggregator';
 
 async function main() {
   const app = express();
@@ -57,6 +58,9 @@ async function main() {
   // Start rule engine
   ruleEngine.start();
 
+  // Start news aggregator
+  startAggregator();
+
   // Start server
   server.listen(config.port, () => {
     console.log(`[Server] Running on http://localhost:${config.port}`);
@@ -67,6 +71,7 @@ async function main() {
     console.log('\n[Server] Shutting down...');
     priceMonitor.stop();
     ruleEngine.stop();
+    stopAggregator();
     saveDatabase();
     process.exit(0);
   });

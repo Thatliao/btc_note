@@ -71,8 +71,49 @@ export async function initDatabase(): Promise<Database> {
     )
   `);
 
+  // 资讯聚合相关表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS news_cache (
+      id TEXT PRIMARY KEY,
+      source TEXT,
+      category TEXT,
+      title TEXT,
+      content TEXT,
+      url TEXT,
+      importance INTEGER DEFAULT 3,
+      published_at TEXT,
+      collected_at TEXT NOT NULL DEFAULT (datetime('now')),
+      is_pushed INTEGER DEFAULT 0
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS push_history (
+      id TEXT PRIMARY KEY,
+      type TEXT,
+      content TEXT,
+      ai_model TEXT,
+      data_sources TEXT,
+      pushed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      status TEXT DEFAULT 'success'
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS market_snapshots (
+      id TEXT PRIMARY KEY,
+      snapshot_type TEXT,
+      data TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   db.run(`CREATE INDEX IF NOT EXISTS idx_alert_rules_status ON alert_rules(status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_alert_history_triggered_at ON alert_history(triggered_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_news_cache_collected_at ON news_cache(collected_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_news_cache_category ON news_cache(category)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_push_history_type ON push_history(type)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_market_snapshots_type ON market_snapshots(snapshot_type)`);
 
   saveDatabase();
   console.log('[DB] Database initialized');
@@ -134,4 +175,34 @@ export interface AlertHistory {
   current_price: number;
   message: string;
   triggered_at: string;
+}
+
+export interface NewsCache {
+  id: string;
+  source: string;
+  category: string;
+  title: string;
+  content: string;
+  url: string;
+  importance: number;
+  published_at: string;
+  collected_at: string;
+  is_pushed: number;
+}
+
+export interface PushHistory {
+  id: string;
+  type: 'morning' | 'evening' | 'breaking' | 'weekly';
+  content: string;
+  ai_model: string;
+  data_sources: string;
+  pushed_at: string;
+  status: 'success' | 'failed';
+}
+
+export interface MarketSnapshot {
+  id: string;
+  snapshot_type: 'hourly' | 'daily' | 'weekly';
+  data: string;
+  created_at: string;
 }
